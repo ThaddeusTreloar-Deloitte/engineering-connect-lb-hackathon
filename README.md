@@ -4,7 +4,7 @@ Thank you for taking part in the Engineering Connect December 2025 Hackathon.
 
 This repository contains instructions for how to get started, what the requirements are, and how to make your submission.
 
-Your team is allowed to use any programming language and tooling to complete this hackathon (see [Constraints](#Constraints))! The only restriction is that you must provide Dockerfile so that your implementation can be built.
+Your team is allowed to use any programming language and tooling to complete this hackathon! See [Constraints](#Constraints) for restrictions. The only restriction is that you must provide Dockerfile so that your implementation can be built.
 
 ## Constraints
 
