@@ -2,15 +2,17 @@
 
 Thank you for taking part in the Engineering Connect December 2025 Hackathon.
 
-This repository contains instructions for how to 
+This repository contains instructions for how to get started, what the requirements are, and how to make your submission.
+
+Your team is allowed to use any programming language and tooling to complete this hackathon (see [Constraints](#Constraints))! The only restriction is that you must provide Dockerfile so that your implementation can be built.
 
 ## Constraints
 
  - The work required to meet the requirements must be performed entirely within the load balancer code
  - Libraries can be used, however, load balancer specific libraries are not available for use. Eg. Pingora, pyLoadBalancer
  - Work must be your teams own and cannot be plagarised from another source, even if the source allows unbounded use of that original source
+ - Your submission should be distributed as a docker image. This docker image should perform all compilation and packaging steps as part of the docker build. A consumer of your image should not have to install any tooling to create this image except for Podman/Docker. As these containers may run on either ARM64 or AMD64 machines during testing, please provide a bash script each for ARM64 and AMD64 targets. An example submission that satisfies these requirements can be found in this repostory at `/example-team`.
  
-
 ## Win Conditions
 
 There are two oppertunities to win this hackathon:
@@ -193,7 +195,7 @@ This feature ***should*** be configurable using the following environment variab
 
 Request response time can be improved by caching frequent requests. As multiple requests for RESTful APIs do not share state, a GET request can be cached in the load balancer and looked up to decrease response time and upstream load.
 
-The lookup key ***should*** contain both the HTTP method and the request URI. When writing an entry to the cache, the expiry time ***should*** be set. After the entry expires it ***should*** be cleaned up, how this is cleaned is up to the implementer. When looking up entries in the cache and expired entry ***should*** never be served. The cache storage ***should*** reside within the load balancer application, no external caching solutions ***should*** be used (Valkey, Redis, etc.).
+The lookup key ***should*** contain both the HTTP method and the request URI. When writing an entry to the cache, the expiry time ***should*** be set. After the entry expires it ***should*** be cleaned up, how this is cleaned is up to the implementer. When looking up entries in the cache and expired entry ***should*** never be served. The cache storage ***should*** reside within the load balancer application, no external caching solutions ***should*** be used (Valkey, Redis, etc.). You ***should*** only cache GET requests with this feature.
 
 This feature ***should*** be configurable using the following environment variables:
  - `CACHE_ENABLE`, (boolean): Enables request chaching.
