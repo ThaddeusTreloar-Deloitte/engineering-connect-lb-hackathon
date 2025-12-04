@@ -21,6 +21,7 @@ There are two paths to victory, to be eligible for the performance crown you onl
  - Libraries can be used, however, load balancer specific libraries are not available for use. Eg. Pingora, pyLoadBalancer
  - Work must be your teams own and cannot be plagarised from another source, even if the source allows unbounded use of that original source
  - Your submission should be distributed as a docker image. This docker image should perform all compilation and packaging steps as part of the docker build. A consumer of your image should not have to install any tooling to create this image except for Podman/Docker. As these containers may run on either ARM64 or AMD64 machines during testing, please provide a bash script each for ARM64 and AMD64 targets. An example submission that satisfies these requirements can be found in this repostory at `/submissions/example-team`.
+ - Any request caching must be able to be disabled
  
 ## Win Conditions
 
