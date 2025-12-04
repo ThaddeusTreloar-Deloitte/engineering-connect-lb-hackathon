@@ -1,6 +1,6 @@
 # Engineering Connect Hackathon Instructions
 
-Thank you for taking part in the Engineering Connect December 2025 Hackathon.
+Thank you for taking part in the Engineering Connect December 2025 Hackathon. This hackathon will run from 4pm Thursday 4th of December 2025 until 5:30pm Thursday 11th of December 2025.
 
 This repository contains instructions for how to get started, what the requirements are, and how to make your submission.
 
@@ -28,6 +28,8 @@ Once your team has completed the implementation make a pull request back to the 
 Instructions for how to make a pull request into the original repository can be found here: [Creating A Pull Request From A Fork](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/creating-a-pull-request-from-a-fork)
 
 An example submission can be found in this repostory at `/submissions/example-team`.
+
+***Submissions close EOD Thursday 11th of December 2025. Pull requests and commits received after 5:30pm on this day will not be eligible for submission.***
 
 All submissions will be licenced under the GNU General Public License Version 2, a copy of which can be found in this respository and at this link: [GNU General Public License, Version 2.](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html)
 
