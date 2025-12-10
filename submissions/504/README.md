@@ -201,28 +201,30 @@ MOCK_DELAY_MS=100 python mock_target.py 8081
 MOCK_ERROR_CODE=500 python mock_target.py 8081
 ```
 
-#### Quick Test Setup
+#### Quick Test Setup (container)
 
-Use the provided test script to start multiple mock targets and the load balancer:
+Run the load balancer in a container (in a separate terminal) using Podman Compose:
 
 ```bash
-chmod +x test_load_balancer.sh
-./test_load_balancer.sh
+podman compose -f podman-compose.yml up --build
 ```
 
-This script:
-- Starts 3 mock target servers on ports 8081, 8082, and 8083
-- Configures the load balancer to route to all 3 targets
-- Starts the load balancer on port 8080
-- Automatically cleans up when stopped (Ctrl+C)
+Start three mock downstream targets for the containerized load balancer:
+
+```bash
+chmod +x mock_downstream_targets_container.sh
+./mock_downstream_targets_container.sh
+```
+
+The script launches mock targets on ports 8081, 8082, and 8083 and keeps them running until you stop it (Ctrl+C).
 
 #### Running Test Examples
 
 Once the load balancer and mock targets are running, use the test examples script:
 
 ```bash
-chmod +x test_examples.sh
-./test_examples.sh
+chmod +x tests/test_examples.sh
+./tests/test_examples.sh
 ```
 
 Or test manually:
