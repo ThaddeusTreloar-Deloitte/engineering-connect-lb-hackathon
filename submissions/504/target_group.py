@@ -3,22 +3,26 @@ Target Group module.
 Represents a set of targets that can be load balanced.
 """
 import socket
-from typing import List, Optional
+from typing import List, Optional, Dict
 from target import Target
 
 
 class TargetGroup:
     """Represents a group of targets for load balancing."""
     
-    def __init__(self, name: str, targets_str: str):
+    def __init__(self, name: str, targets_str: str, weights: Optional[Dict[str, int]] = None):
         """
         Initialize a target group.
         
         Args:
             name: The name of the target group
             targets_str: Comma-delimited list of <hostname>:<port>/<base-uri> entries
+            weights: Dictionary mapping hostname to weight (optional)
         """
         self.name = name
+        # Store None explicitly to distinguish between "not provided" and "empty dict"
+        self.weights = weights if weights is not None else {}
+        self._weights_provided = weights is not None
         self.targets = self._parse_targets(targets_str)
     
     def _parse_targets(self, targets_str: str) -> List[Target]:
@@ -69,9 +73,9 @@ class TargetGroup:
             # Resolve DNS to get all IP addresses
             ip_addresses = self._resolve_dns(hostname)
             
-            # Create a target for each IP address
+            # Create a target for each IP address, preserving hostname for weight lookup
             for ip in ip_addresses:
-                target = Target(ip, port, base_uri)
+                target = Target(ip, port, base_uri, hostname=hostname)
                 targets.append(target)
         
         return targets
@@ -113,4 +117,46 @@ class TargetGroup:
     def get_targets(self) -> List[Target]:
         """Get all targets in this group."""
         return self.targets
+    
+    def get_weight(self, hostname: str) -> int:
+        """
+        Get the weight for a hostname.
+        
+        Args:
+            hostname: The hostname to get weight for
+            
+        Returns:
+            The weight for the hostname, or 1 if not specified
+        """
+        return self.weights.get(hostname, 1)
+    
+    def get_weighted_target_list(self) -> List[Target]:
+        """
+        Get a list of targets expanded by their weights for weighted round-robin.
+        Each target appears in the list a number of times equal to its weight.
+        
+        Returns:
+            List of targets expanded by weight, or empty list if no weights configured
+        """
+        # If weights were not provided, return empty list
+        if not self._weights_provided:
+            return []
+        
+        weighted_list = []
+        # Group targets by hostname to apply weights
+        hostname_targets: Dict[str, List[Target]] = {}
+        for target in self.targets:
+            hostname = target.hostname or target.ip
+            if hostname not in hostname_targets:
+                hostname_targets[hostname] = []
+            hostname_targets[hostname].append(target)
+        
+        # Build weighted list: each hostname's targets appear weight times
+        for hostname, targets in hostname_targets.items():
+            weight = self.get_weight(hostname)
+            # Add all IPs for this hostname, repeated by weight
+            for _ in range(weight):
+                weighted_list.extend(targets)
+        
+        return weighted_list
 

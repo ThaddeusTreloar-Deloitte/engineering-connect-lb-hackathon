@@ -8,7 +8,7 @@ from typing import Optional
 class Target:
     """Represents a single target for HTTP requests."""
     
-    def __init__(self, ip: str, port: int, base_uri: str = '/'):
+    def __init__(self, ip: str, port: int, base_uri: str = '/', hostname: Optional[str] = None):
         """
         Initialize a target.
         
@@ -20,6 +20,7 @@ class Target:
         self.ip = ip
         self.port = port
         self.base_uri = base_uri.rstrip('/') if base_uri != '/' else ''
+        self.hostname = hostname
     
     def get_url(self, path: str) -> str:
         """

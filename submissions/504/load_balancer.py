@@ -27,6 +27,8 @@ class LoadBalancer:
         """
         self.config = config
         self.round_robin_counters = {}  # Track round robin state per target group
+        self.weighted_target_lists = {}  # Cache weighted target lists per target group
+        self.weighted_counters = {}  # Track round robin state per target group
         # Session pool per target host for connection reuse
         self._sessions: Dict[str, requests.Session] = {}
     
@@ -51,8 +53,7 @@ class LoadBalancer:
         if algorithm == 'ROUND_ROBIN':
             return self._round_robin(target_group, targets)
         elif algorithm == 'WEIGHTED':
-            # Not implemented yet
-            return targets[0] if targets else None
+            return self._weighted(target_group, targets)
         elif algorithm == 'STICKY':
             # Not implemented yet
             return targets[0] if targets else None
@@ -88,6 +89,50 @@ class LoadBalancer:
         
         # Increment counter for next request
         self.round_robin_counters[group_name] = (index + 1) % len(targets)
+        
+        return target
+
+
+    def _weighted(self, target_group: TargetGroup, targets: list) -> Target:
+        """
+        Select the next target using weighted round-robin algorithm.
+        Targets are selected based on their weights, with higher weights
+        receiving more requests proportionally.
+        
+        Args:
+            target_group: The target group
+            targets: List of available targets
+            
+        Returns:
+            Selected target
+        """
+        group_name = target_group.name
+        
+        # Build or retrieve cached weighted target list
+        if group_name not in self.weighted_target_lists:
+            weighted_list = target_group.get_weighted_target_list()
+            if not weighted_list:
+                # Fallback to regular targets if no weights configured
+                weighted_list = targets
+            self.weighted_target_lists[group_name] = weighted_list
+        
+        weighted_list = self.weighted_target_lists[group_name]
+        
+        if not weighted_list:
+            return targets[0] if targets else None
+        
+        # Initialize counter if not exists
+        if group_name not in self.weighted_counters:
+            self.weighted_counters[group_name] = 0
+        
+        # Get current index
+        index = self.weighted_counters[group_name]
+        
+        # Select target from weighted list
+        target = weighted_list[index % len(weighted_list)]
+        
+        # Increment counter for next request
+        self.weighted_counters[group_name] = (index + 1) % len(weighted_list)
         
         return target
     
