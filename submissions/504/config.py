@@ -15,7 +15,9 @@ class Config:
     def __init__(self):
         self.listener_port = int(os.getenv('LISTENER_PORT', '8080'))
         self.connection_timeout = int(os.getenv('CONNECTION_TIMEOUT', '5000')) / 1000.0  # Convert ms to seconds
+        # Allowed values: ROUND_ROBIN, WEIGHTED, STICKY, LRT
         self.load_balancing_algorithm = os.getenv('LOAD_BALANCING_ALGORITHM', 'ROUND_ROBIN')
+        self.header_convention_enable = os.getenv('HEADER_CONVENTION_ENABLE', 'false').lower() == 'true'
         
         # Parse listener rules
         self.listener_rules = self._parse_listener_rules()
@@ -38,6 +40,10 @@ class Config:
     def get_load_balancing_algorithm(self) -> str:
         """Get the load balancing algorithm."""
         return self.load_balancing_algorithm
+
+    def get_header_convention_enable(self) -> bool:
+        """Return whether to add convention headers (e.g., X-Forwarded-*)."""
+        return self.header_convention_enable
     
     def _parse_listener_rules(self) -> List[ListenerRule]:
         """
@@ -73,7 +79,8 @@ class Config:
     def _parse_target_groups(self) -> Dict[str, TargetGroup]:
         """
         Parse target groups from environment variables.
-        Expected format: TARGET_GROUP_<N>_NAME, TARGET_GROUP_<N>_TARGETS, TARGET_GROUP_<N>_WEIGHTS
+        Expected format: TARGET_GROUP_<N>_NAME, TARGET_GROUP_<N>_TARGETS, TARGET_GROUP_<N>_WEIGHTS,
+                       TARGET_GROUP_<N>_HEALTH_CHECK_ENABLED, etc.
         """
         target_groups = {}
         group_index = 1
@@ -88,6 +95,21 @@ class Config:
                 break
             
             targets_str = os.getenv(targets_key, '')
+            
+            # Parse health check configuration
+            health_check_enabled_key = f'TARGET_GROUP_{group_index}_HEALTH_CHECK_ENABLED'
+            health_check_path_key = f'TARGET_GROUP_{group_index}_HEALTH_CHECK_PATH'
+            health_check_interval_key = f'TARGET_GROUP_{group_index}_HEALTH_CHECK_INTERVAL'
+            health_check_succeed_threshold_key = f'TARGET_GROUP_{group_index}_HEALTH_CHECK_SUCCEED_THRESHOLD'
+            health_check_failure_threshold_key = f'TARGET_GROUP_{group_index}_HEALTH_CHECK_FAILURE_THRESHOLD'
+            
+            # Parse with defaults
+            health_check_enabled = os.getenv(health_check_enabled_key, 'false').lower() == 'true'
+            health_check_path = os.getenv(health_check_path_key, '/health')
+            health_check_interval = int(os.getenv(health_check_interval_key, '60000'))
+            health_check_succeed_threshold = int(os.getenv(health_check_succeed_threshold_key, '2'))
+            health_check_failure_threshold = int(os.getenv(health_check_failure_threshold_key, '2'))
+            
             if targets_str:
                 # Parse weights if provided
                 weights_str = os.getenv(weights_key)
@@ -98,7 +120,16 @@ class Config:
                 if weights and self.load_balancing_algorithm == 'WEIGHTED':
                     self._validate_weights(name, targets_str, weights)
                 
-                target_group = TargetGroup(name, targets_str, weights)
+                target_group = TargetGroup(
+                    name, 
+                    targets_str,
+                    weights=weights,
+                    health_check_enabled=health_check_enabled,
+                    health_check_path=health_check_path,
+                    health_check_interval_ms=health_check_interval,
+                    health_check_succeed_threshold=health_check_succeed_threshold,
+                    health_check_failure_threshold=health_check_failure_threshold
+                )
                 target_groups[name] = target_group
             
             group_index += 1
@@ -191,6 +222,7 @@ class Config:
     def _validate_weighted_algorithm_has_weights(self) -> None:
         """
         Validate that all target groups have weights configured when WEIGHTED algorithm is used.
+        Weights must be provided via TARGET_GROUP_<N>_WEIGHTS environment variable.
         
         Raises:
             ValueError: If any target group is missing weights

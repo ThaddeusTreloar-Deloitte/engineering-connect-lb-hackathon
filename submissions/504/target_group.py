@@ -10,7 +10,12 @@ from target import Target
 class TargetGroup:
     """Represents a group of targets for load balancing."""
     
-    def __init__(self, name: str, targets_str: str, weights: Optional[Dict[str, int]] = None):
+    def __init__(self, name: str, targets_str: str, weights: Optional[Dict[str, int]] = None,
+                 health_check_enabled: bool = False,
+                 health_check_path: str = '/health',
+                 health_check_interval_ms: int = 30000,
+                 health_check_succeed_threshold: int = 2,
+                 health_check_failure_threshold: int = 2):
         """
         Initialize a target group.
         
@@ -18,12 +23,27 @@ class TargetGroup:
             name: The name of the target group
             targets_str: Comma-delimited list of <hostname>:<port>/<base-uri> entries
             weights: Dictionary mapping hostname to weight (optional)
+            health_check_enabled: Whether to enable health checks
+            health_check_path: Path for health check requests
+            health_check_interval_ms: Interval between health checks in milliseconds
+            health_check_succeed_threshold: Consecutive successes to mark healthy
+            health_check_failure_threshold: Consecutive failures to mark unhealthy
         """
         self.name = name
         # Store None explicitly to distinguish between "not provided" and "empty dict"
         self.weights = weights if weights is not None else {}
         self._weights_provided = weights is not None
         self.targets = self._parse_targets(targets_str)
+        
+        # Health check configuration
+        self.health_check_enabled = health_check_enabled
+        self.health_check_path = health_check_path
+        self.health_check_interval_ms = health_check_interval_ms
+        self.health_check_succeed_threshold = health_check_succeed_threshold
+        self.health_check_failure_threshold = health_check_failure_threshold
+        
+        # Health check object (initialized lazily)
+        self.health_check = None
     
     def _parse_targets(self, targets_str: str) -> List[Target]:
         """
@@ -73,9 +93,12 @@ class TargetGroup:
             # Resolve DNS to get all IP addresses
             ip_addresses = self._resolve_dns(hostname)
             
+            # Get weight from weights dict if available, otherwise default to 1
+            weight = self.weights.get(hostname, 1) if self.weights else 1
+            
             # Create a target for each IP address, preserving hostname for weight lookup
             for ip in ip_addresses:
-                target = Target(ip, port, base_uri, hostname=hostname)
+                target = Target(ip, port, base_uri, hostname=hostname, weight=weight)
                 targets.append(target)
         
         return targets
@@ -128,35 +151,62 @@ class TargetGroup:
         Returns:
             The weight for the hostname, or 1 if not specified
         """
-        return self.weights.get(hostname, 1)
+        return self.weights.get(hostname, 1) if self.weights else 1
     
     def get_weighted_target_list(self) -> List[Target]:
         """
         Get a list of targets expanded by their weights for weighted round-robin.
         Each target appears in the list a number of times equal to its weight.
+        Weights are configured via TARGET_GROUP_<N>_WEIGHTS environment variable.
         
         Returns:
             List of targets expanded by weight, or empty list if no weights configured
         """
-        # If weights were not provided, return empty list
+        # If weights were not provided via env var, return empty list
         if not self._weights_provided:
             return []
         
         weighted_list = []
-        # Group targets by hostname to apply weights
-        hostname_targets: Dict[str, List[Target]] = {}
+        # Use target.weight directly - it's already set from weights dict during target creation
         for target in self.targets:
-            hostname = target.hostname or target.ip
-            if hostname not in hostname_targets:
-                hostname_targets[hostname] = []
-            hostname_targets[hostname].append(target)
-        
-        # Build weighted list: each hostname's targets appear weight times
-        for hostname, targets in hostname_targets.items():
-            weight = self.get_weight(hostname)
-            # Add all IPs for this hostname, repeated by weight
-            for _ in range(weight):
-                weighted_list.extend(targets)
+            # Add this target weight times
+            for _ in range(target.weight):
+                weighted_list.append(target)
         
         return weighted_list
+    
+    def get_healthy_targets(self) -> List[Target]:
+        """
+        Get only healthy targets from this group.
+        If health checks are disabled, returns all targets.
+        
+        Returns:
+            List of healthy targets
+        """
+        if not self.health_check_enabled or not self.health_check:
+            return self.targets
+        
+        return self.health_check.get_healthy_targets(self.targets)
+    
+    def start_health_checks(self):
+        """Start the health check thread for this target group."""
+        if not self.health_check_enabled or self.health_check:
+            return
+        
+        from health_check import HealthCheck
+        
+        self.health_check = HealthCheck(
+            target_group=self,
+            enabled=self.health_check_enabled,
+            path=self.health_check_path,
+            interval_ms=self.health_check_interval_ms,
+            succeed_threshold=self.health_check_succeed_threshold,
+            failure_threshold=self.health_check_failure_threshold
+        )
+        self.health_check.start()
+    
+    def stop_health_checks(self):
+        """Stop the health check thread for this target group."""
+        if self.health_check:
+            self.health_check.stop()
 

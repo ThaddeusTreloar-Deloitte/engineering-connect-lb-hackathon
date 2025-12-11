@@ -3,12 +3,14 @@ Load Balancer module.
 Handles request forwarding and load balancing algorithms.
 """
 import requests
+import uuid
 from flask import Request, Response
 from typing import Optional, Dict
 from config import Config
 from target_group import TargetGroup
 from target import Target
 from error_handler import handle_error
+import time
 
 
 # Hop-by-hop headers that should not be forwarded
@@ -35,6 +37,7 @@ class LoadBalancer:
     def select_target(self, target_group: TargetGroup, request: Request) -> Optional[Target]:
         """
         Select a target from the target group using the configured algorithm.
+        Only selects from healthy targets if health checks are enabled.
         
         Args:
             target_group: The target group to select from
@@ -43,7 +46,8 @@ class LoadBalancer:
         Returns:
             Selected target or None if no targets available
         """
-        targets = target_group.get_targets()
+        # Get healthy targets (or all targets if health checks disabled)
+        targets = target_group.get_healthy_targets()
         
         if not targets:
             return None
@@ -52,12 +56,11 @@ class LoadBalancer:
         
         if algorithm == 'ROUND_ROBIN':
             return self._round_robin(target_group, targets)
+        elif algorithm == 'LRT':
+            return self._least_response_time(target_group, targets)
         elif algorithm == 'WEIGHTED':
             return self._weighted(target_group, targets)
         elif algorithm == 'STICKY':
-            # Not implemented yet
-            return targets[0] if targets else None
-        elif algorithm == 'LRT':
             # Not implemented yet
             return targets[0] if targets else None
         else:
@@ -91,7 +94,6 @@ class LoadBalancer:
         self.round_robin_counters[group_name] = (index + 1) % len(targets)
         
         return target
-
 
     def _weighted(self, target_group: TargetGroup, targets: list) -> Target:
         """
@@ -136,6 +138,34 @@ class LoadBalancer:
         
         return target
     
+    def _least_response_time(self, target_group: TargetGroup, targets: list) -> Target:
+        """
+        Select the target with the lowest (active_connections * avg_ttfb).
+        If avg_ttfb is unknown (0), it's treated as a small value to prefer idle targets.
+        """
+        best = None
+        best_metric = None
+        for target in targets:
+            # get metrics
+            active = getattr(target, 'active_connections', 0)
+            avg_ttfb = getattr(target, 'avg_ttfb', None)
+            try:
+                avg = target.avg_ttfb() if callable(target.avg_ttfb) else 0.0
+            except Exception:
+                avg = 0.0
+
+            if avg <= 0.0:
+                # treat unknown avg as very small to favor cold targets
+                avg = 0.001
+
+            metric = active * avg
+
+            if best is None or metric < best_metric:
+                best = target
+                best_metric = metric
+
+        return best
+    
     def _get_session(self, target: Target) -> requests.Session:
         """
         Get or create a session for the target host.
@@ -176,6 +206,10 @@ class LoadBalancer:
             Response from the target or error response
         """
         try:
+            # Track connection and TTFB
+            target.inc_connections()
+            start = time.monotonic()
+            
             # Construct full URL
             url = target.get_url(path)
             
@@ -185,6 +219,39 @@ class LoadBalancer:
                 key: value for key, value in request.headers
                 if key.lower() not in HOP_BY_HOP_HEADERS
             }
+
+            # Add X-Forwarded-* headers when enabled
+            if self.config.get_header_convention_enable():
+                # Determine client IP (prefer the first element in access_route)
+                client_ip = request.access_route[0] if request.access_route else request.remote_addr
+
+                # X-Forwarded-For: append client IP if already present
+                existing_xff = headers.get('X-Forwarded-For') or headers.get('x-forwarded-for')
+                if existing_xff and client_ip:
+                    headers['X-Forwarded-For'] = f"{existing_xff}, {client_ip}"
+                elif client_ip:
+                    headers['X-Forwarded-For'] = client_ip
+
+                # X-Forwarded-Host: set to requested host
+                if request.host:
+                    headers['X-Forwarded-Host'] = request.host
+
+                # X-Forwarded-Port: set to listener port
+                headers['X-Forwarded-Port'] = str(self.config.get_listener_port())
+
+                # X-Forwarded-Proto: set to request scheme (http/https)
+                headers['X-Forwarded-Proto'] = request.scheme
+
+                # X-Real-IP: set to client IP
+                if client_ip:
+                    headers['X-Real-IP'] = client_ip
+
+                # X-Request-Id: generate unique request ID
+                headers['X-Request-Id'] = str(uuid.uuid4())
+
+                # Host: set to original host header (override the excluded host)
+                if request.host:
+                    headers['Host'] = request.host
             
             # Prepare request data
             data = request.get_data()
@@ -204,22 +271,36 @@ class LoadBalancer:
                 headers=headers,
                 data=data,
                 timeout=timeout,
-                allow_redirects=False
+                allow_redirects=False,
+                stream=True
             )
-            
-            # Create Flask response
+
+            ttfb = time.monotonic() - start
+            try:
+                target.record_ttfb(ttfb)
+            except Exception:
+                pass
+
+            # Read body to completion
+            content = response.content
+
             flask_response = Response(
-                response.content,
+                content,
                 status=response.status_code,
                 headers=dict(response.headers)
             )
-            
+
             return flask_response
-            
+
         except requests.exceptions.Timeout:
             return handle_error(504, "Request timeout")
         except requests.exceptions.ConnectionError:
             return handle_error(502, "Connection error")
         except Exception as e:
             return handle_error(502, f"Error forwarding request: {str(e)}")
+        finally:
+            try:
+                target.dec_connections()
+            except Exception:
+                pass
 
