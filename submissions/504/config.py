@@ -101,7 +101,7 @@ class Config:
             # Parse with defaults
             health_check_enabled = os.getenv(health_check_enabled_key, 'false').lower() == 'true'
             health_check_path = os.getenv(health_check_path_key, '/health')
-            health_check_interval = int(os.getenv(health_check_interval_key, '30000'))
+            health_check_interval = int(os.getenv(health_check_interval_key, '60000'))
             health_check_succeed_threshold = int(os.getenv(health_check_succeed_threshold_key, '2'))
             health_check_failure_threshold = int(os.getenv(health_check_failure_threshold_key, '2'))
             
